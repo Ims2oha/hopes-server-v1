@@ -32,7 +32,7 @@ data class RetrievedChunk(
  * 질문과의 코사인 유사도로 상위 청크를 찾는다. 임베딩 결과는 파일로 캐시해 재시작 시 재사용.
  */
 @Service
-class RagIndexService(
+final class RagIndexService(
     private val client: GeminiClient,
     private val objectMapper: ObjectMapper,
     private val resourceLoader: ResourceLoader,
