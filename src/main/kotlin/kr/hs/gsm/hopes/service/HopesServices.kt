@@ -1,5 +1,6 @@
 package kr.hs.gsm.hopes.service
 
+import kr.hs.gsm.hopes.ai.AiChatService
 import kr.hs.gsm.hopes.api.*
 import kr.hs.gsm.hopes.domain.*
 import kr.hs.gsm.hopes.security.AccessTokenService
@@ -164,6 +165,7 @@ class ChatService(
     private val users: UserService,
     private val conversations: ConversationRepository,
     private val messages: ChatMessageRepository,
+    private val ai: AiChatService,
 ) {
     fun main(email: String, keyword: String?): MainResponse {
         val user = users.requireUser(email)
@@ -187,10 +189,21 @@ class ChatService(
     @Transactional
     fun send(email: String, id: Long, request: SendMessageRequest): ChatResponse {
         val conversation = requireConversation(email, id)
+        if (ai.enabled && !ai.isReady()) {
+            throw ApiException(HttpStatus.SERVICE_UNAVAILABLE, "AI가 아직 준비 중입니다. 잠시 후 다시 시도해주세요")
+        }
+        val content = request.content.trim()
+        // 이번 질문을 저장하기 전의 내역을 확보해야 모델에 직전 대화 맥락이 전달된다.
+        val history = messages.findAllByConversationIdOrderByCreatedAtAsc(conversation.id!!)
         val now = Instant.now()
-        messages.save(ChatMessage(conversation = conversation, role = MessageRole.USER, content = request.content.trim(), createdAt = now))
-        if (conversation.title == "새 대화") conversation.title = request.content.trim().take(40)
+        messages.save(ChatMessage(conversation = conversation, role = MessageRole.USER, content = content, createdAt = now))
+        if (conversation.title == "새 대화") conversation.title = content.take(40)
         conversation.updatedAt = now
+        if (ai.enabled) {
+            val answer = ai.reply(conversation.user, history, content)
+            messages.save(ChatMessage(conversation = conversation, role = MessageRole.ASSISTANT, content = answer.take(12000), createdAt = Instant.now()))
+            conversation.updatedAt = Instant.now()
+        }
         return detail(conversation)
     }
 

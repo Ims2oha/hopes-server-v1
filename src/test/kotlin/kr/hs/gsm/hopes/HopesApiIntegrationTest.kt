@@ -15,6 +15,7 @@ import org.springframework.test.web.servlet.post
 @SpringBootTest(
     properties = [
         "hopes.mail.enabled=false",
+        "hopes.ai.enabled=false",
         "spring.datasource.url=jdbc:h2:mem:hopes-test;MODE=PostgreSQL;DB_CLOSE_DELAY=-1",
     ]
 )

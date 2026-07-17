@@ -28,6 +28,16 @@ server:
   port: ${PORT}
 
 hopes:
+  ai:
+    enabled: ${AI_ENABLED:true}
+    gemini-api-key: ${GEMINI_API_KEY:}
+    chat-model: ${AI_CHAT_MODEL:gemini-3.1-flash-lite}
+    embedding-model: ${AI_EMBEDDING_MODEL:gemini-embedding-001}
+    chunks-path: ${AI_CHUNKS_PATH:classpath:data/gsm_guide_rag_chunks.jsonl}
+    cache-path: ${AI_CACHE_PATH:./data/embeddings_cache.json}
+    top-k: ${AI_TOP_K:3}
+    min-similarity: ${AI_MIN_SIMILARITY:0.55}
+    history-max-turns: ${AI_HISTORY_MAX_TURNS:20}
   auth:
     token-secret: ${TOKEN_SECRET}
     token-validity-hours: ${TOKEN_VALIDITY_HOURS}

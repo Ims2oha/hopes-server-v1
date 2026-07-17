@@ -54,4 +54,31 @@ mvn spring-boot:run
 
 로그인 이후 API에는 `Authorization: Bearer {accessToken}` 헤더가 필요합니다.
 
-AI 모델 연동은 AI 담당자가 별도로 제공하는 영역이므로 이 서버는 현재 사용자 질문과 대화 내역 저장을 담당합니다.
+## AI (RAG + Gemini)
+
+`POST /api/chats/{id}/messages`가 이제 사용자 질문 저장 후 AI 답변까지 생성해 저장하고, 두 메시지가 포함된 대화 전체를 반환합니다.
+
+동작 방식 (프로토타입 `hopes/backend` 구조 이식):
+
+1. 서버 시작 시 `src/main/resources/data/gsm_guide_rag_chunks.jsonl`(선배 설문 126개 청크)을 `gemini-embedding-001`로 임베딩해 메모리 인덱스 구축. 결과는 `./data/embeddings_cache.json`에 캐시되어 재시작 시 API 호출 없이 재사용.
+2. 질문마다: 약어 확장(기자위→기숙사자치위원회 등) → 질문 임베딩 → 코사인 유사도 상위 3개 청크 검색(임계값 미달 시 0개) → "GSM 선배" 페르소나 + 검색 청크 + 최근 대화 20턴 + 사용자 정보/커스텀 프롬프트로 `gemini-3.1-flash-lite` 호출.
+3. 검색 결과가 없으면 프롬프트가 사실 창작을 금지하고 "모른다"고 답하게 유도.
+
+### 설정
+
+`.env`에 [Google AI Studio](https://aistudio.google.com/apikey)에서 발급한 키를 넣습니다.
+
+```properties
+GEMINI_API_KEY=발급받은_키
+```
+
+키가 없으면 AI만 비활성화되고 서버는 기존처럼 질문 저장만 합니다.
+
+선택 항목(기본값 있음): `AI_ENABLED`, `AI_CHAT_MODEL`, `AI_EMBEDDING_MODEL`, `AI_TOP_K`, `AI_MIN_SIMILARITY`, `AI_HISTORY_MAX_TURNS`, `AI_CHUNKS_PATH`, `AI_CACHE_PATH`
+
+### 운영 메모
+
+- 인덱스 구축 완료 전 질문은 `503 AI가 아직 준비 중입니다` (시작 후 수 초 이내).
+- Gemini 호출 실패 시 `502` 반환 — 트랜잭션 롤백으로 사용자 질문도 저장되지 않으므로 같은 내용으로 재시도하면 됩니다.
+- `AI_MIN_SIMILARITY`(기본 0.55)는 로그의 `[ai] "질문" → sims:` 값을 보고 조정하세요. 임베딩 모델이 프로토타입(로컬 e5)과 달라져 임계값도 다시 잡은 것입니다.
+- 답변 생성은 동기 방식입니다(응답까지 수 초). 스트리밍이 필요하면 SSE 엔드포인트 추가가 별도 작업으로 필요합니다.
