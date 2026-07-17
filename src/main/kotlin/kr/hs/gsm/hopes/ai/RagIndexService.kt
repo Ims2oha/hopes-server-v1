@@ -9,6 +9,7 @@ import org.springframework.context.event.EventListener
 import org.springframework.core.io.ResourceLoader
 import org.springframework.stereotype.Service
 import java.io.File
+import java.security.MessageDigest
 
 // GSM 약어/별칭 → 정식 명칭. 검색 질의 확장과 시스템 프롬프트의 용어 안내에 함께 쓰인다.
 val ABBREVIATIONS = mapOf(
@@ -42,6 +43,7 @@ final class RagIndexService(
     @Value("\${hopes.ai.embedding-model}") private val embeddingModel: String,
     @Value("\${hopes.ai.top-k}") private val topK: Int,
     @Value("\${hopes.ai.min-similarity}") private val minSimilarity: Double,
+    @Value("\${hopes.ai.index-retry-seconds}") private val indexRetrySeconds: Long,
 ) {
     private val log = LoggerFactory.getLogger(javaClass)
 
@@ -78,24 +80,44 @@ final class RagIndexService(
             return
         }
         // 시작을 막지 않도록 별도 스레드에서 인덱스 구축. 완료 전 질문은 503 응답.
+        // 일시적 장애(Gemini 장애, 네트워크 오류)로 실패하면 지수 백오프로 성공할 때까지 재시도한다.
         Thread {
-            try {
-                buildIndex()
-            } catch (e: Exception) {
-                log.error("[ai] RAG 인덱스 구축 실패 — AI 응답이 비활성 상태로 유지됩니다", e)
+            var delayMs = indexRetrySeconds * 1000
+            while (true) {
+                try {
+                    buildIndex()
+                    return@Thread
+                } catch (e: Exception) {
+                    log.error("[ai] RAG 인덱스 구축 실패 — {}초 후 재시도합니다", delayMs / 1000, e)
+                    try {
+                        Thread.sleep(delayMs)
+                    } catch (interrupted: InterruptedException) {
+                        return@Thread
+                    }
+                    delayMs = (delayMs * 2).coerceAtMost(MAX_RETRY_DELAY_MS)
+                }
             }
         }.apply { isDaemon = true; name = "rag-index-build" }.start()
     }
 
     private fun buildIndex() {
         val chunks = loadChunks()
-        val cached = loadCache()
-        val missing = chunks.filter { it["chunk_id"].asText() !in cached }
+        val hashes = chunks.associate { it["chunk_id"].asText() to sha256(it["text"].asText()) }
+        val cache = loadCache()
+        // 캐시에 없거나 텍스트가 수정된(해시 불일치) 청크만 다시 임베딩한다.
+        val missing = chunks.filter { node ->
+            val id = node["chunk_id"].asText()
+            cache.vectors[id] == null || cache.hashes[id] != hashes[id]
+        }
         if (missing.isNotEmpty()) {
             log.info("[ai] 청크 {}개 임베딩 중 (캐시 재사용 {}개)…", missing.size, chunks.size - missing.size)
             val vectors = client.embed(missing.map { it["text"].asText() }, "RETRIEVAL_DOCUMENT")
-            missing.forEachIndexed { i, node -> cached[node["chunk_id"].asText()] = vectors[i] }
-            saveCache(cached)
+            missing.forEachIndexed { i, node ->
+                val id = node["chunk_id"].asText()
+                cache.vectors[id] = vectors[i]
+                cache.hashes[id] = hashes.getValue(id)
+            }
+            saveCache(cache)
         }
         index = chunks.map { node ->
             IndexedChunk(
@@ -103,7 +125,7 @@ final class RagIndexService(
                 text = node["text"].asText(),
                 question = node["question"]?.asText()?.takeIf { it.isNotBlank() },
                 answer = node["answer"]?.asText()?.takeIf { it.isNotBlank() },
-                embedding = cached.getValue(node["chunk_id"].asText()),
+                embedding = cache.vectors.getValue(node["chunk_id"].asText()),
             )
         }
         ready = true
@@ -154,35 +176,52 @@ final class RagIndexService(
                 }
             }
 
-    private fun loadCache(): MutableMap<String, DoubleArray> {
+    private data class EmbeddingCache(
+        val vectors: MutableMap<String, DoubleArray> = mutableMapOf(),
+        val hashes: MutableMap<String, String> = mutableMapOf(),
+    )
+
+    private fun loadCache(): EmbeddingCache {
         val file = File(cachePath)
-        if (!file.exists()) return mutableMapOf()
+        if (!file.exists()) return EmbeddingCache()
         return try {
             val root = objectMapper.readTree(file)
             val vectors = root["vectors"]
-            if (root["model"]?.asText() != embeddingModel || vectors == null) return mutableMapOf()
-            vectors.fieldNames().asSequence().associateWithTo(mutableMapOf()) { name ->
-                vectors[name].map { it.asDouble() }.toDoubleArray()
+            if (root["model"]?.asText() != embeddingModel || vectors == null) return EmbeddingCache()
+            val cache = EmbeddingCache()
+            vectors.fieldNames().forEach { name ->
+                cache.vectors[name] = vectors[name].map { it.asDouble() }.toDoubleArray()
             }
+            // hashes가 없는 구버전 캐시는 해시 불일치로 처리되어 전부 다시 임베딩된다.
+            root["hashes"]?.fields()?.forEach { (name, node) -> cache.hashes[name] = node.asText() }
+            cache
         } catch (e: Exception) {
             log.warn("[ai] 임베딩 캐시 로드 실패 — 새로 임베딩합니다: {}", e.message)
-            mutableMapOf()
+            EmbeddingCache()
         }
     }
 
-    private fun saveCache(vectorsById: Map<String, DoubleArray>) {
+    private fun saveCache(cache: EmbeddingCache) {
         try {
             val file = File(cachePath)
             file.parentFile?.mkdirs()
-            objectMapper.writeValue(file, mapOf("model" to embeddingModel, "vectors" to vectorsById))
+            objectMapper.writeValue(file, mapOf("model" to embeddingModel, "vectors" to cache.vectors, "hashes" to cache.hashes))
         } catch (e: Exception) {
             log.warn("[ai] 임베딩 캐시 저장 실패: {}", e.message)
         }
     }
 
+    private fun sha256(text: String): String =
+        MessageDigest.getInstance("SHA-256").digest(text.toByteArray(Charsets.UTF_8))
+            .joinToString("") { "%02x".format(it) }
+
     private fun dot(a: DoubleArray, b: DoubleArray): Double {
         var sum = 0.0
         for (i in a.indices) sum += a[i] * b[i]
         return sum
+    }
+
+    companion object {
+        private const val MAX_RETRY_DELAY_MS = 300_000L
     }
 }

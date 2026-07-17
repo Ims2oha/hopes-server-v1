@@ -26,8 +26,8 @@ class AiChatService(
 
     /**
      * history = 이번 질문을 저장하기 전까지의 대화 내역(후속 질문 맥락용).
-     * 실패 시 ApiException(502)을 던진다 — 호출부 트랜잭션이 롤백되어 사용자 메시지도 저장되지 않으므로
-     * 클라이언트는 같은 내용으로 그대로 재시도하면 된다.
+     * 실패 시 ApiException(502)을 던진다 — 호출부가 메시지를 저장하기 전에 이 메서드를 호출하므로
+     * 사용자 메시지도 저장되지 않아 클라이언트는 같은 내용으로 그대로 재시도하면 된다.
      */
     fun reply(user: User, history: List<ChatMessage>, question: String): String {
         return try {

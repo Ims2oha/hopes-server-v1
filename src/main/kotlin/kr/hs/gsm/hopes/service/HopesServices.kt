@@ -9,6 +9,7 @@ import org.springframework.http.HttpStatus
 import org.springframework.security.crypto.password.PasswordEncoder
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
+import org.springframework.transaction.support.TransactionTemplate
 import java.security.SecureRandom
 import java.time.Instant
 
@@ -166,6 +167,7 @@ class ChatService(
     private val conversations: ConversationRepository,
     private val messages: ChatMessageRepository,
     private val ai: AiChatService,
+    private val transactionTemplate: TransactionTemplate,
 ) {
     fun main(email: String, keyword: String?): MainResponse {
         val user = users.requireUser(email)
@@ -184,34 +186,35 @@ class ChatService(
         return detail(conversation)
     }
 
-    fun get(email: String, id: Long): ChatResponse = detail(requireConversation(email, id))
+    fun get(email: String, id: Long): ChatResponse = detail(requireConversation(users.requireUser(email), id))
 
-    @Transactional
     fun send(email: String, id: Long, request: SendMessageRequest): ChatResponse {
-        val conversation = requireConversation(email, id)
+        val user = users.requireUser(email)
+        val conversation = requireConversation(user, id)
         if (ai.enabled && !ai.isReady()) {
             throw ApiException(HttpStatus.SERVICE_UNAVAILABLE, "AI가 아직 준비 중입니다. 잠시 후 다시 시도해주세요")
         }
         val content = request.content.trim()
         // 이번 질문을 저장하기 전의 내역을 확보해야 모델에 직전 대화 맥락이 전달된다.
         val history = messages.findAllByConversationIdOrderByCreatedAtAsc(conversation.id!!)
-        val now = Instant.now()
-        messages.save(ChatMessage(conversation = conversation, role = MessageRole.USER, content = content, createdAt = now))
-        if (conversation.title == "새 대화") conversation.title = content.take(40)
-        conversation.updatedAt = now
-        if (ai.enabled) {
-            val answer = ai.reply(conversation.user, history, content)
-            messages.save(ChatMessage(conversation = conversation, role = MessageRole.ASSISTANT, content = answer.take(12000), createdAt = Instant.now()))
+        // Gemini 호출은 최대 60초까지 걸릴 수 있어 트랜잭션(DB 커넥션) 밖에서 실행한다.
+        // 실패하면 여기서 예외가 전파되어 아무것도 저장되지 않으므로 클라이언트는 같은 내용으로 재시도하면 된다.
+        val answer = if (ai.enabled) ai.reply(user, history, content) else null
+        transactionTemplate.executeWithoutResult {
+            messages.save(ChatMessage(conversation = conversation, role = MessageRole.USER, content = content, createdAt = Instant.now()))
+            if (conversation.title == "새 대화") conversation.title = content.take(40)
+            answer?.let {
+                messages.save(ChatMessage(conversation = conversation, role = MessageRole.ASSISTANT, content = it.take(12000), createdAt = Instant.now()))
+            }
             conversation.updatedAt = Instant.now()
+            conversations.save(conversation)
         }
         return detail(conversation)
     }
 
-    private fun requireConversation(email: String, id: Long): Conversation {
-        val user = users.requireUser(email)
-        return conversations.findByIdAndUserId(id, user.id!!)
+    private fun requireConversation(user: User, id: Long): Conversation =
+        conversations.findByIdAndUserId(id, user.id!!)
             ?: throw ApiException(HttpStatus.NOT_FOUND, "지난 대화를 찾을 수 없습니다")
-    }
 
     private fun summary(value: Conversation) = ChatSummary(value.id!!, value.title, value.updatedAt)
     private fun detail(value: Conversation) = ChatResponse(
