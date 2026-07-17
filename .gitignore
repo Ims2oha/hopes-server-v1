@@ -3,4 +3,3 @@ target/
 *.iml
 .env
 *.log
-/data/
