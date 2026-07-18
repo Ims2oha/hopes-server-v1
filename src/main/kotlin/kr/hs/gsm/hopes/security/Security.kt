@@ -4,6 +4,7 @@ import com.fasterxml.jackson.databind.ObjectMapper
 import jakarta.servlet.FilterChain
 import jakarta.servlet.http.HttpServletRequest
 import jakarta.servlet.http.HttpServletResponse
+import kr.hs.gsm.hopes.domain.UserRepository
 import javax.crypto.Mac
 import javax.crypto.spec.SecretKeySpec
 import org.springframework.beans.factory.annotation.Value
@@ -27,25 +28,41 @@ import java.nio.charset.StandardCharsets
 import java.time.Instant
 import java.util.Base64
 
+data class AccessTokenClaims(val email: String, val tokenVersion: Long)
+
 @Component
 class AccessTokenService(
     @Value("\${hopes.auth.token-secret}") private val secret: String,
     @Value("\${hopes.auth.token-validity-hours}") private val validityHours: Long,
 ) {
-    fun create(email: String): String {
+    init {
+        require(secret.toByteArray(StandardCharsets.UTF_8).size >= 32) { "TOKEN_SECRET은 32바이트 이상이어야 합니다" }
+        require(validityHours > 0) { "TOKEN_VALIDITY_HOURS는 1 이상이어야 합니다" }
+    }
+
+    fun create(email: String, tokenVersion: Long): String {
         val subject = Base64.getUrlEncoder().withoutPadding().encodeToString(email.toByteArray())
         val expires = Instant.now().plusSeconds(validityHours * 3600).epochSecond
-        val payload = "$subject.$expires"
+        val payload = "$subject.$tokenVersion.$expires"
         return "$payload.${sign(payload)}"
     }
 
-    fun parse(token: String): String? = runCatching {
+    fun parse(token: String): AccessTokenClaims? = runCatching {
         val parts = token.split('.')
-        require(parts.size == 3)
-        val payload = "${parts[0]}.${parts[1]}"
-        require(java.security.MessageDigest.isEqual(sign(payload).toByteArray(), parts[2].toByteArray()))
-        require(parts[1].toLong() > Instant.now().epochSecond)
-        String(Base64.getUrlDecoder().decode(parts[0]), StandardCharsets.UTF_8)
+        require(parts.size == 4)
+        val payload = "${parts[0]}.${parts[1]}.${parts[2]}"
+        require(
+            java.security.MessageDigest.isEqual(
+                sign(payload).toByteArray(StandardCharsets.US_ASCII),
+                parts[3].toByteArray(StandardCharsets.US_ASCII),
+            )
+        )
+        val tokenVersion = parts[1].toLong()
+        require(parts[2].toLong() > Instant.now().epochSecond)
+        AccessTokenClaims(
+            String(Base64.getUrlDecoder().decode(parts[0]), StandardCharsets.UTF_8),
+            tokenVersion,
+        )
     }.getOrNull()
 
     private fun sign(payload: String): String {
@@ -56,12 +73,16 @@ class AccessTokenService(
 }
 
 @Component
-class AccessTokenFilter(private val tokenService: AccessTokenService) : OncePerRequestFilter() {
+class AccessTokenFilter(
+    private val tokenService: AccessTokenService,
+    private val users: UserRepository,
+) : OncePerRequestFilter() {
     override fun doFilterInternal(request: HttpServletRequest, response: HttpServletResponse, filterChain: FilterChain) {
         val token = request.getHeader("Authorization")?.takeIf { it.startsWith("Bearer ") }?.removePrefix("Bearer ")
-        val email = token?.let(tokenService::parse)
-        if (email != null) {
-            SecurityContextHolder.getContext().authentication = UsernamePasswordAuthenticationToken(email, null, emptyList())
+        val claims = token?.let(tokenService::parse)
+        val user = claims?.let { users.findByEmail(it.email) }
+        if (claims != null && user?.tokenVersion == claims.tokenVersion) {
+            SecurityContextHolder.getContext().authentication = UsernamePasswordAuthenticationToken(claims.email, null, emptyList())
         }
         filterChain.doFilter(request, response)
     }

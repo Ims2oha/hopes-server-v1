@@ -9,8 +9,13 @@ spring:
     password: ${DATABASE_PASSWORD}
   jpa:
     hibernate:
-      ddl-auto: update
+      ddl-auto: validate
     open-in-view: false
+  flyway:
+    enabled: true
+    baseline-on-migrate: true
+    baseline-version: 1
+    locations: classpath:db/migration/{vendor}
   mail:
     host: ${MAIL_HOST}
     port: ${MAIL_PORT}
@@ -26,6 +31,7 @@ spring:
 
 server:
   port: ${PORT}
+  forward-headers-strategy: ${SERVER_FORWARD_HEADERS_STRATEGY:none}
 
 hopes:
   ai:
@@ -41,6 +47,10 @@ hopes:
     index-retry-seconds: ${AI_INDEX_RETRY_SECONDS:30}
   rate-limit:
     messages-per-minute: ${RATE_LIMIT_MESSAGES_PER_MINUTE:10}
+    login-attempts-per-minute: ${RATE_LIMIT_LOGIN_ATTEMPTS_PER_MINUTE:5}
+    verification-requests-per-minute: ${RATE_LIMIT_VERIFICATION_REQUESTS_PER_MINUTE:3}
+    verification-attempts-per-minute: ${RATE_LIMIT_VERIFICATION_ATTEMPTS_PER_MINUTE:5}
+    auth-requests-per-ip-per-minute: ${RATE_LIMIT_AUTH_REQUESTS_PER_IP_PER_MINUTE:60}
   auth:
     token-secret: ${TOKEN_SECRET}
     token-validity-hours: ${TOKEN_VALIDITY_HOURS}

@@ -27,7 +27,7 @@ DATABASE_URL=jdbc:mysql://localhost:3306/hopes?createDatabaseIfNotExist=true&use
 mvn spring-boot:run
 ```
 
-서버 기본 주소는 `http://localhost:8080`입니다. 테이블은 JPA가 자동 생성·갱신합니다.
+서버 기본 주소는 `http://localhost:8080`입니다. DB 스키마는 Flyway가 버전별로 생성·갱신하고 JPA가 시작 시 구조를 검증합니다.
 
 ## Gmail 인증메일
 
@@ -41,9 +41,9 @@ mvn spring-boot:run
 | POST | `/api/signup/email-verifications/confirm` | 인증번호 확인 |
 | POST | `/api/signup` | 회원가입 |
 | POST | `/api/login` | 로그인 및 Bearer 토큰 발급 |
-| GET | `/api/main?searchKeyword=` | 대화 목록/검색 |
+| GET | `/api/main?searchKeyword=&page=0&size=50` | 대화 목록/검색(최대 100개) |
 | POST | `/api/chats` | 새 대화 생성 |
-| GET | `/api/chats/{id}` | 대화 불러오기 |
+| GET | `/api/chats/{id}?messagePage=0&messageSize=50` | 대화 불러오기(최신 페이지부터, 최대 100개) |
 | POST | `/api/chats/{id}/messages` | 사용자 질문 저장 |
 | PATCH | `/api/general` | 다크/라이트 테마 변경 |
 | GET/PATCH | `/api/mypage` | 사용자 정보 조회/수정 |
@@ -53,6 +53,7 @@ mvn spring-boot:run
 | POST | `/api/password/reset` | 비밀번호 변경 |
 
 로그인 이후 API에는 `Authorization: Bearer {accessToken}` 헤더가 필요합니다.
+로그아웃하거나 비밀번호를 변경하면 해당 사용자에게 기존에 발급한 토큰은 즉시 무효화됩니다.
 
 ## AI (RAG + Gemini)
 
@@ -75,6 +76,12 @@ GEMINI_API_KEY=발급받은_키
 키가 없으면 AI만 비활성화되고 서버는 기존처럼 질문 저장만 합니다.
 
 선택 항목(기본값 있음): `AI_ENABLED`, `AI_CHAT_MODEL`, `AI_EMBEDDING_MODEL`, `AI_TOP_K`, `AI_MIN_SIMILARITY`, `AI_HISTORY_MAX_TURNS`, `AI_CHUNKS_PATH`, `AI_CACHE_PATH`
+
+### 요청 횟수 제한
+
+서버는 기본적으로 사용자별 AI 질문 분당 10회, 계정별 로그인 시도 분당 5회, 이메일별 인증번호 발송 분당 3회, 인증번호 확인 분당 5회로 제한합니다. 인증 관련 전체 요청은 IP별 분당 60회로 제한합니다. 카운터는 MySQL에 해시 키로 저장되어 서버가 여러 대여도 공유되며 만료된 윈도우는 자동 삭제됩니다. 필요하면 `.env`의 `RATE_LIMIT_*` 값을 조정할 수 있으며, 0 이하로 설정하면 해당 제한이 비활성화됩니다.
+
+리버스 프록시 뒤에서 운영할 때만 `.env`의 `SERVER_FORWARD_HEADERS_STRATEGY=framework`로 변경하고, 외부 요청이 반드시 신뢰할 수 있는 프록시를 거쳐 들어오도록 구성해야 실제 클라이언트 IP 기준 제한이 적용됩니다.
 
 ### 운영 메모
 

@@ -54,6 +54,7 @@ class HopesAiIntegrationTest @Autowired constructor(
         assertTrue(rag.ready, "RAG 인덱스가 준비되지 않았습니다")
         gemini.generateError = null
         gemini.systemPrompts.clear()
+        gemini.generatedTurns.clear()
     }
 
     @Test
@@ -80,8 +81,11 @@ class HopesAiIntegrationTest @Autowired constructor(
 
         val prompt = gemini.systemPrompts.last()
         assertTrue(prompt.contains("기숙사 통금은 밤 11시입니다."), "검색된 청크가 프롬프트에 없습니다")
-        assertTrue(prompt.contains("aiuser1"), "질문자 정보가 프롬프트에 없습니다")
-        assertTrue(prompt.contains("항상 반말로 답해줘"), "사용자 설정 프롬프트가 프롬프트에 없습니다")
+        assertTrue(prompt.contains("[최종 우선순위 규칙]"), "시스템 안전 규칙이 없습니다")
+        assertTrue(!prompt.contains("aiuser1") && !prompt.contains("항상 반말로 답해줘"), "사용자 입력이 시스템 프롬프트에 섞였습니다")
+        val userTurn = gemini.generatedTurns.last().last().second
+        assertTrue(userTurn.contains("aiuser1"), "질문자 정보가 사용자 턴에 없습니다")
+        assertTrue(userTurn.contains("항상 반말로 답해줘"), "사용자 설정이 사용자 턴에 없습니다")
     }
 
     @Test

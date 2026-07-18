@@ -8,6 +8,7 @@ package kr.hs.gsm.hopes.ai
 class FakeGeminiClient : GeminiClient("test-key", "test-chat-model", "test-embedding-model") {
     val embeddedTexts = mutableListOf<String>()
     val systemPrompts = mutableListOf<String>()
+    val generatedTurns = mutableListOf<List<Pair<String, String>>>()
     var embedFailures = 0
     var generateError: RuntimeException? = null
     var answer: String = "테스트 답변"
@@ -26,6 +27,7 @@ class FakeGeminiClient : GeminiClient("test-key", "test-chat-model", "test-embed
     override fun generate(systemPrompt: String, turns: List<Pair<String, String>>): String {
         generateError?.let { throw it }
         systemPrompts += systemPrompt
+        generatedTurns += turns
         return answer
     }
 
