@@ -18,6 +18,7 @@ import org.springframework.test.web.servlet.MockMvc
 import org.springframework.test.web.servlet.get
 import org.springframework.test.web.servlet.patch
 import org.springframework.test.web.servlet.post
+import java.time.Instant
 
 /** AI 기능(RAG 검색, 프롬프트 구성, Gemini 오류 처리, 답변 저장)을 가짜 Gemini로 검증한다. */
 @SpringBootTest(
@@ -26,6 +27,7 @@ import org.springframework.test.web.servlet.post
         "hopes.ai.enabled=true",
         "hopes.ai.chunks-path=classpath:data/test_rag_chunks.jsonl",
         "hopes.ai.cache-path=./target/ai-test/embeddings_cache.json",
+        "hopes.rate-limit.messages-per-minute=3",
         "spring.datasource.url=jdbc:h2:mem:hopes-ai-test;MODE=PostgreSQL;DB_CLOSE_DELAY=-1",
     ]
 )
@@ -124,6 +126,49 @@ class HopesAiIntegrationTest @Autowired constructor(
             status { isOk() }
             jsonPath("$.messages[1].content") { value("재시도 성공 답변") }
         }
+    }
+
+    @Test
+    fun `12000자를 넘는 질문은 Gemini 호출 없이 400으로 거절한다`() {
+        val authorization = signupAndToken("ai-user5@gsm.hs.kr", "aiuser5")
+        val chatId = createChat(authorization, "길이 제한")
+
+        mockMvc.post("/api/chats/$chatId/messages") {
+            header("Authorization", authorization)
+            contentType = MediaType.APPLICATION_JSON
+            content = """{"content":"${"a".repeat(12001)}"}"""
+        }.andExpect { status { isBadRequest() } }
+
+        assertTrue(gemini.systemPrompts.isEmpty(), "검증에서 걸러진 질문이 Gemini까지 호출됐습니다")
+        mockMvc.get("/api/chats/$chatId") {
+            header("Authorization", authorization)
+        }.andExpect {
+            status { isOk() }
+            jsonPath("$.messages.length()") { value(0) }
+        }
+    }
+
+    @Test
+    fun `분당 요청 제한을 넘으면 429를 반환한다`() {
+        val authorization = signupAndToken("ai-user6@gsm.hs.kr", "aiuser6")
+        val chatId = createChat(authorization, "속도 제한")
+
+        // 분 경계에 걸려 카운터가 리셋되면 결과가 흔들리므로 다음 분까지 기다린다.
+        val second = Instant.now().epochSecond % 60
+        if (second >= 55) Thread.sleep((61 - second) * 1000)
+
+        repeat(3) {
+            mockMvc.post("/api/chats/$chatId/messages") {
+                header("Authorization", authorization)
+                contentType = MediaType.APPLICATION_JSON
+                content = """{"content":"안녕 $it"}"""
+            }.andExpect { status { isOk() } }
+        }
+        mockMvc.post("/api/chats/$chatId/messages") {
+            header("Authorization", authorization)
+            contentType = MediaType.APPLICATION_JSON
+            content = """{"content":"안녕 4"}"""
+        }.andExpect { status { isTooManyRequests() } }
     }
 
     private fun signupAndToken(email: String, username: String): String {

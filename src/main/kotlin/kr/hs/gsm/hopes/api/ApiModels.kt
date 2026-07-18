@@ -30,7 +30,10 @@ data class ThemeRequest(val theme: Theme)
 data class MyPageUpdateRequest(val username: String? = null, val nickname: String? = null, val profileInfo: String? = null, val profileImage: String? = null)
 data class SettingUpdateRequest(val customPrompt: String? = null, val deleteAllChats: Boolean = false)
 data class CreateChatRequest(val title: String? = null)
-data class SendMessageRequest(@field:NotBlank val content: String)
+data class SendMessageRequest(
+    // messages.content 컬럼 길이(12000)와 맞춘 상한. Gemini 호출 전에 걸러 비용·시간 낭비를 막는다.
+    @field:NotBlank @field:Size(max = 12000, message = "질문은 12,000자 이하여야 합니다") val content: String,
+)
 data class InquiryRequest(@field:NotBlank val content: String)
 
 data class TokenResponse(val accessToken: String, val tokenType: String = "Bearer")

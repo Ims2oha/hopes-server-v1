@@ -168,6 +168,7 @@ class ChatService(
     private val messages: ChatMessageRepository,
     private val ai: AiChatService,
     private val transactionTemplate: TransactionTemplate,
+    private val rateLimiter: RateLimiter,
 ) {
     fun main(email: String, keyword: String?): MainResponse {
         val user = users.requireUser(email)
@@ -189,6 +190,7 @@ class ChatService(
     fun get(email: String, id: Long): ChatResponse = detail(requireConversation(users.requireUser(email), id))
 
     fun send(email: String, id: Long, request: SendMessageRequest): ChatResponse {
+        rateLimiter.checkMessage(email)
         val user = users.requireUser(email)
         val conversation = requireConversation(user, id)
         if (ai.enabled && !ai.isReady()) {

@@ -39,6 +39,8 @@ hopes:
     min-similarity: ${AI_MIN_SIMILARITY:0.55}
     history-max-turns: ${AI_HISTORY_MAX_TURNS:20}
     index-retry-seconds: ${AI_INDEX_RETRY_SECONDS:30}
+  rate-limit:
+    messages-per-minute: ${RATE_LIMIT_MESSAGES_PER_MINUTE:10}
   auth:
     token-secret: ${TOKEN_SECRET}
     token-validity-hours: ${TOKEN_VALIDITY_HOURS}
