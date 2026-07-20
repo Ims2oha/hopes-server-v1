@@ -2,6 +2,8 @@ package kr.hs.gsm.hopes
 
 import com.fasterxml.jackson.databind.ObjectMapper
 import kr.hs.gsm.hopes.domain.EmailVerificationRepository
+import kr.hs.gsm.hopes.domain.InquiryRepository
+import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Test
 import org.springframework.beans.factory.annotation.Autowired
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc
@@ -24,6 +26,7 @@ class HopesApiIntegrationTest @Autowired constructor(
     private val mockMvc: MockMvc,
     private val objectMapper: ObjectMapper,
     private val verificationRepository: EmailVerificationRepository,
+    private val inquiryRepository: InquiryRepository,
 ) {
     @Test
     fun `signup login chat and settings flow`() {
@@ -86,5 +89,19 @@ class HopesApiIntegrationTest @Autowired constructor(
             status { isOk() }
             jsonPath("$.chatList[0].title") { value("Kotlin 질문") }
         }
+
+        mockMvc.get("/api/main?searchKeyword=실행") {
+            header("Authorization", authorization)
+        }.andExpect {
+            status { isOk() }
+            jsonPath("$.chatList[0].id") { value(chatId) }
+        }
+
+        mockMvc.post("/api/setting/inquiry") {
+            header("Authorization", authorization)
+            contentType = MediaType.APPLICATION_JSON
+            content = """{"content":"급식 기능도 추가해주세요"}"""
+        }.andExpect { status { isAccepted() } }
+        assertEquals("급식 기능도 추가해주세요", inquiryRepository.findAll().single().content)
     }
 }
