@@ -14,6 +14,8 @@ class GeminiClient(
     @Value("\${hopes.ai.gemini-api-key}") private val apiKey: String,
     @Value("\${hopes.ai.chat-model}") private val chatModel: String,
     @Value("\${hopes.ai.embedding-model}") private val embeddingModel: String,
+    // 답변은 저장 시 12000자로 잘리므로 그보다 길게 생성하면 비용·대기시간만 낭비된다. 생성 단계에서 상한.
+    @Value("\${hopes.ai.max-output-tokens:2048}") private val maxOutputTokens: Int = 2048,
 ) {
     val hasKey: Boolean get() = apiKey.isNotBlank()
 
@@ -63,7 +65,7 @@ class GeminiClient(
                 mapOf("role" to role, "parts" to listOf(mapOf("text" to text)))
             },
             // 낮은 temperature → 창작 억제, 검색된 데이터에 근거한 답변 유도.
-            "generationConfig" to mapOf("temperature" to 0.4, "topP" to 0.9),
+            "generationConfig" to mapOf("temperature" to 0.4, "topP" to 0.9, "maxOutputTokens" to maxOutputTokens),
         )
         val response = rest.post()
             .uri("/models/{model}:generateContent", chatModel)

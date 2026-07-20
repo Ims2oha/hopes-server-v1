@@ -112,6 +112,8 @@ class SettingsController(private val users: UserService) {
     fun setting(authentication: Authentication, @Valid @RequestBody request: SettingUpdateRequest) = users.updateSettings(authentication.name, request)
 
     @PostMapping("/setting/inquiry")
-    fun inquiry(authentication: Authentication, @Valid @RequestBody request: InquiryRequest): ResponseEntity<MessageEnvelope> =
-        ResponseEntity.accepted().body(MessageEnvelope("문의가 접수되었습니다"))
+    fun inquiry(authentication: Authentication, @Valid @RequestBody request: InquiryRequest): ResponseEntity<MessageEnvelope> {
+        users.submitInquiry(authentication.name, request.content)
+        return ResponseEntity.accepted().body(MessageEnvelope("문의가 접수되었습니다"))
+    }
 }

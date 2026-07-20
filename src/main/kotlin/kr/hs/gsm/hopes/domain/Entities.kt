@@ -71,6 +71,19 @@ class ChatMessage(
 )
 
 @Entity
+@Table(name = "inquiries")
+class Inquiry(
+    @Id @GeneratedValue(strategy = GenerationType.IDENTITY)
+    var id: Long? = null,
+    @ManyToOne(fetch = FetchType.LAZY, optional = false)
+    var user: User = User(),
+    @Column(nullable = false, length = 4000)
+    var content: String = "",
+    @Column(nullable = false)
+    var createdAt: Instant = Instant.now(),
+)
+
+@Entity
 @Table(name = "email_verifications")
 class EmailVerification(
     @Id

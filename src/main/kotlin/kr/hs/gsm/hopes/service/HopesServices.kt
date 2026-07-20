@@ -133,6 +133,7 @@ class UserService(
     private val users: UserRepository,
     private val conversations: ConversationRepository,
     private val messages: ChatMessageRepository,
+    private val inquiries: InquiryRepository,
 ) {
     fun requireUser(email: String): User = users.findByEmail(email)
         ?: throw ApiException(HttpStatus.UNAUTHORIZED, "로그인이 필요합니다")
@@ -158,6 +159,12 @@ class UserService(
         request.profileInfo?.let { user.profileInfo = it.trim() }
         request.profileImage?.let { user.profileImage = it.trim().ifEmpty { null } }
         return response(user)
+    }
+
+    @Transactional
+    fun submitInquiry(email: String, content: String) {
+        val user = requireUser(email)
+        inquiries.save(Inquiry(user = user, content = content.trim()))
     }
 
     @Transactional
@@ -203,7 +210,7 @@ class ChatService(
         val chats = if (keyword.isNullOrBlank()) {
             conversations.findAllByUserIdOrderByUpdatedAtDesc(user.id!!, pageable)
         } else {
-            conversations.findAllByUserIdAndTitleContainingIgnoreCaseOrderByUpdatedAtDesc(user.id!!, keyword, pageable)
+            conversations.searchByUserIdAndKeyword(user.id!!, keyword.trim(), pageable)
         }
         return MainResponse(chats.content.map(::summary), true, keyword, page, size, chats.hasNext())
     }

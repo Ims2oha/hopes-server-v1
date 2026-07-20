@@ -17,7 +17,23 @@ interface UserRepository : JpaRepository<User, Long> {
 interface ConversationRepository : JpaRepository<Conversation, Long> {
     fun findAllByUserIdOrderByUpdatedAtDesc(userId: Long): List<Conversation>
     fun findAllByUserIdOrderByUpdatedAtDesc(userId: Long, pageable: Pageable): Slice<Conversation>
-    fun findAllByUserIdAndTitleContainingIgnoreCaseOrderByUpdatedAtDesc(userId: Long, title: String, pageable: Pageable): Slice<Conversation>
+
+    /** 대화 제목뿐 아니라 대화에 포함된 메시지 내용까지 검색한다(대소문자 무시). */
+    @Query(
+        """
+        select c from Conversation c
+        where c.user.id = :userId
+          and (lower(c.title) like lower(concat('%', :keyword, '%'))
+               or exists (
+                   select m.id from ChatMessage m
+                   where m.conversation = c
+                     and lower(m.content) like lower(concat('%', :keyword, '%'))
+               ))
+        order by c.updatedAt desc
+        """
+    )
+    fun searchByUserIdAndKeyword(@Param("userId") userId: Long, @Param("keyword") keyword: String, pageable: Pageable): Slice<Conversation>
+
     fun findByIdAndUserId(id: Long, userId: Long): Conversation?
     fun deleteAllByUserId(userId: Long)
 }
@@ -38,3 +54,5 @@ interface RateLimitWindowRepository : JpaRepository<RateLimitWindow, String> {
     @Query("delete from RateLimitWindow window where window.windowMinute < :minute")
     fun deleteExpiredBefore(@Param("minute") minute: Long): Int
 }
+
+interface InquiryRepository : JpaRepository<Inquiry, Long>
