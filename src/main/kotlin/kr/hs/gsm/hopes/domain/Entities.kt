@@ -15,19 +15,27 @@ class User(
     var email: String = "",
     @Column(nullable = false)
     var passwordHash: String = "",
-    @Column(nullable = false, unique = true)
+    @Column(nullable = false, unique = true, length = 50)
     var username: String = "",
+    @Column(nullable = false, length = 50)
     var nickname: String = "",
+    @Column(length = 50)
     var gender: String? = null,
+    @Column(length = 100)
     var major: String? = null,
     var cohort: Int? = null,
-    @Column(length = 2000)
+    @Column(nullable = false, length = 2000)
     var profileInfo: String = "",
+    @Column(length = 255)
     var profileImage: String? = null,
     @Enumerated(EnumType.STRING)
+    @Column(nullable = false, length = 20)
     var theme: Theme = Theme.LIGHT,
-    @Column(length = 4000)
+    @Column(nullable = false, length = 4000)
     var customPrompt: String = "",
+    @Column(nullable = false)
+    var tokenVersion: Long = 0,
+    @Column(nullable = false)
     var createdAt: Instant = Instant.now(),
 )
 
@@ -38,9 +46,11 @@ class Conversation(
     var id: Long? = null,
     @ManyToOne(fetch = FetchType.LAZY, optional = false)
     var user: User = User(),
-    @Column(nullable = false)
+    @Column(nullable = false, length = 255)
     var title: String = "새 대화",
+    @Column(nullable = false)
     var createdAt: Instant = Instant.now(),
+    @Column(nullable = false)
     var updatedAt: Instant = Instant.now(),
 )
 
@@ -52,9 +62,24 @@ class ChatMessage(
     @ManyToOne(fetch = FetchType.LAZY, optional = false)
     var conversation: Conversation = Conversation(),
     @Enumerated(EnumType.STRING)
+    @Column(nullable = false, length = 20)
     var role: MessageRole = MessageRole.USER,
     @Column(nullable = false, length = 12000)
     var content: String = "",
+    @Column(nullable = false)
+    var createdAt: Instant = Instant.now(),
+)
+
+@Entity
+@Table(name = "inquiries")
+class Inquiry(
+    @Id @GeneratedValue(strategy = GenerationType.IDENTITY)
+    var id: Long? = null,
+    @ManyToOne(fetch = FetchType.LAZY, optional = false)
+    var user: User = User(),
+    @Column(nullable = false, length = 4000)
+    var content: String = "",
+    @Column(nullable = false)
     var createdAt: Instant = Instant.now(),
 )
 
@@ -62,8 +87,27 @@ class ChatMessage(
 @Table(name = "email_verifications")
 class EmailVerification(
     @Id
+    @Column(length = 255)
     var email: String = "",
+    @Column(nullable = false, length = 6)
     var code: String = "",
+    @Column(nullable = false)
     var expiresAt: Instant = Instant.now(),
+    @Column(nullable = false)
     var verified: Boolean = false,
+)
+
+@Entity
+@Table(name = "rate_limit_windows")
+class RateLimitWindow(
+    @Id
+    @Column(name = "key_hash", length = 64)
+    var keyHash: String = "",
+    @Column(nullable = false)
+    var windowMinute: Long = 0,
+    @Column(nullable = false)
+    var requestCount: Int = 0,
+    @Version
+    @Column(nullable = false)
+    var version: Long? = null,
 )

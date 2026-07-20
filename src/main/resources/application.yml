@@ -9,8 +9,13 @@ spring:
     password: ${DATABASE_PASSWORD}
   jpa:
     hibernate:
-      ddl-auto: update
+      ddl-auto: validate
     open-in-view: false
+  flyway:
+    enabled: true
+    baseline-on-migrate: true
+    baseline-version: 1
+    locations: classpath:db/migration/{vendor}
   mail:
     host: ${MAIL_HOST}
     port: ${MAIL_PORT}
@@ -26,8 +31,27 @@ spring:
 
 server:
   port: ${PORT}
+  forward-headers-strategy: ${SERVER_FORWARD_HEADERS_STRATEGY:none}
 
 hopes:
+  ai:
+    enabled: ${AI_ENABLED:true}
+    gemini-api-key: ${GEMINI_API_KEY:}
+    chat-model: ${AI_CHAT_MODEL:gemini-3.1-flash-lite}
+    embedding-model: ${AI_EMBEDDING_MODEL:gemini-embedding-001}
+    chunks-path: ${AI_CHUNKS_PATH:classpath:data/gsm_guide_rag_chunks.jsonl}
+    cache-path: ${AI_CACHE_PATH:./data/embeddings_cache.json}
+    top-k: ${AI_TOP_K:3}
+    min-similarity: ${AI_MIN_SIMILARITY:0.55}
+    history-max-turns: ${AI_HISTORY_MAX_TURNS:20}
+    max-output-tokens: ${AI_MAX_OUTPUT_TOKENS:2048}
+    index-retry-seconds: ${AI_INDEX_RETRY_SECONDS:30}
+  rate-limit:
+    messages-per-minute: ${RATE_LIMIT_MESSAGES_PER_MINUTE:10}
+    login-attempts-per-minute: ${RATE_LIMIT_LOGIN_ATTEMPTS_PER_MINUTE:5}
+    verification-requests-per-minute: ${RATE_LIMIT_VERIFICATION_REQUESTS_PER_MINUTE:3}
+    verification-attempts-per-minute: ${RATE_LIMIT_VERIFICATION_ATTEMPTS_PER_MINUTE:5}
+    auth-requests-per-ip-per-minute: ${RATE_LIMIT_AUTH_REQUESTS_PER_IP_PER_MINUTE:60}
   auth:
     token-secret: ${TOKEN_SECRET}
     token-validity-hours: ${TOKEN_VALIDITY_HOURS}
